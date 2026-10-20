@@ -1,0 +1,19 @@
+
+[project]
+name = "secure-mcp-gateway"
+version = "0.1.0"
+description = "A secure MCP gateway for controlled LLM database access"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
