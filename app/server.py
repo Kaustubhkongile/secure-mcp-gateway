@@ -110,44 +110,6 @@ def get_approval_status(request_id: str) -> str:
     except Exception:
         return json.dumps({"error": "failed to retrieve approval status"})
 
-
-@mcp.tool()
-def approve_request(request_id: str, approver_id: str) -> str:
-    """Approve a pending request through a database transaction."""
-    try:
-        result = repository.decide_request(
-            request_id=request_id,
-            approver_id=approver_id,
-            approve=True,
-        )
-        return json.dumps({
-            "message": "Request approved and operation applied.",
-            "request": result,
-        })
-    except GatewayError as exc:
-        return json.dumps({"error": str(exc)})
-    except Exception:
-        return json.dumps({"error": "approval decision failed"})
-
-
-@mcp.tool()
-def reject_request(request_id: str, approver_id: str) -> str:
-    """Reject a pending request through a database transaction."""
-    try:
-        result = repository.decide_request(
-            request_id=request_id,
-            approver_id=approver_id,
-            approve=False,
-        )
-        return json.dumps({
-            "message": "Request rejected. No configuration change was made.",
-            "request": result,
-        })
-    except GatewayError as exc:
-        return json.dumps({"error": str(exc)})
-    except Exception:
-        return json.dumps({"error": "rejection decision failed"})
-
 @mcp.tool()
 def get_audit_log(request_id: str | None = None) -> str:
     """Read persistent audit events, optionally filtered by request ID."""
