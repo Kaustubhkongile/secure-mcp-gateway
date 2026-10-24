@@ -23,10 +23,11 @@ supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
 reviewer_user_id = os.getenv("REVIEWER_USER_ID", "").strip()
 
 
+from pydantic import BaseModel, Field, StrictBool
+
 class DecisionRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=100)
-    approve: bool
-
+    approve: StrictBool
 
 def authenticate_reviewer(authorization: str | None) -> tuple[str, str]:
     if not reviewer_user_id or not supabase_anon_key or not supabase_url:

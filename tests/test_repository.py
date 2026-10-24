@@ -1,4 +1,152 @@
 
+import pytest
+
+from app.gateway import GatewayError
+from app.repository import SupabaseRepository
+
+
+def test_create_request_rejects_empty_database_response():
+    class EmptyResponseClient(FakeSupabase):
+        def table(self, table_name):
+            query = super().table(table_name)
+            query.execute = lambda: FakeResponse([])
+            return query
+
+    repository = SupabaseRepository(EmptyResponseClient())
+
+    with pytest.raises(GatewayError, match="failed to persist approval request"):
+        repository.create_request(
+            "update", "cfg-001", {"setting_value": "5"}, "Test request"
+        )
+
+
+def test_get_request_rejects_missing_request():
+    repository = SupabaseRepository(FakeSupabase())
+
+    with pytest.raises(GatewayError, match="approval request not found"):
+        repository.get_request("req-missing")
+
+
+def test_record_audit_event_rejects_empty_database_response():
+    class EmptyResponseClient(FakeSupabase):
+        def table(self, table_name):
+            query = super().table(table_name)
+            query.execute = lambda: FakeResponse([])
+            return query
+
+    repository = SupabaseRepository(EmptyResponseClient())
+
+    with pytest.raises(GatewayError, match="failed to persist audit event"):
+        repository.record_audit_event(
+            "update_requested", "req-001", "mcp-client"
+        )
+
+
+def test_get_audit_log_filters_by_request_id():
+    repository = SupabaseRepository(FakeSupabase())
+
+    repository.record_audit_event(
+        "update_requested", "req-001", "mcp-client"
+    )
+    repository.record_audit_event(
+        "delete_requested", "req-002", "mcp-client"
+    )
+
+    events = repository.get_audit_log("req-001")
+
+    assert len(events) == 1
+    assert events[0]["request_id"] == "req-001"
+
+
+@pytest.mark.parametrize("approve", ["true", 1, None, [], {}])
+def test_decide_request_requires_boolean(approve):
+    repository = SupabaseRepository(FakeSupabase())
+
+    with pytest.raises(GatewayError, match="approval decision must be a boolean"):
+        repository.decide_request("req-001", "local-reviewer", approve)
+
+
+def test_decide_request_wraps_database_errors():
+    class BrokenRpcClient(FakeSupabase):
+        def rpc(self, function_name, params):
+            raise RuntimeError("sensitive database details")
+
+    repository = SupabaseRepository(BrokenRpcClient())
+
+    with pytest.raises(
+        GatewayError,
+        match="database approval decision failed",
+    ) as error:
+        repository.decide_request("req-001", "local-reviewer", True)
+
+    assert "sensitive database details" not in str(error.value)
+
+
+def test_decide_request_rejects_missing_result():
+    class EmptyRpcResponse:
+        data = None
+
+    class EmptyRpcQuery:
+        def execute(self):
+            return EmptyRpcResponse()
+
+    class EmptyRpcClient(FakeSupabase):
+        def rpc(self, function_name, params):
+            return EmptyRpcQuery()
+
+    repository = SupabaseRepository(EmptyRpcClient())
+
+    with pytest.raises(GatewayError, match="database returned no decision result"):
+        repository.decide_request("req-001", "local-reviewer", True)
+
+
+@pytest.mark.parametrize("operation", ["insert", "read", "approve", ""])
+def test_create_request_atomic_rejects_unsupported_operation(operation):
+    repository = SupabaseRepository(FakeSupabase())
+
+    with pytest.raises(GatewayError, match="unsupported operation"):
+        repository.create_request_atomic(
+            operation, "cfg-001", {}, "Test operation"
+        )
+
+
+def test_create_request_atomic_wraps_database_errors():
+    class BrokenRpcClient(FakeSupabase):
+        def rpc(self, function_name, params):
+            raise RuntimeError("database unavailable")
+
+    repository = SupabaseRepository(BrokenRpcClient())
+
+    with pytest.raises(
+        GatewayError,
+        match="failed to create persistent approval request",
+    ) as error:
+        repository.create_request_atomic(
+            "update", "cfg-001", {"setting_value": "5"}, "Test failure"
+        )
+
+    assert "database unavailable" not in str(error.value)
+
+
+def test_create_request_atomic_rejects_empty_result():
+    class EmptyRpcResponse:
+        data = None
+
+    class EmptyRpcQuery:
+        def execute(self):
+            return EmptyRpcResponse()
+
+    class EmptyRpcClient(FakeSupabase):
+        def rpc(self, function_name, params):
+            return EmptyRpcQuery()
+
+    repository = SupabaseRepository(EmptyRpcClient())
+
+    with pytest.raises(GatewayError, match="database returned no request result"):
+        repository.create_request_atomic(
+            "delete", "cfg-001", {}, "Test empty result"
+        )
+
 from app.repository import SupabaseRepository
 
 
