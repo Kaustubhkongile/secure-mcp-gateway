@@ -1,4 +1,8 @@
 import json
+import os
+from app.mcp_auth import MCPBearerAuthMiddleware
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from mcp.server import MCPServer
 
@@ -120,5 +124,32 @@ def get_audit_log(request_id: str | None = None) -> str:
         return json.dumps({"error": "failed to retrieve audit log"})
 
 
+
+def run_server():
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+
+    if transport == "streamable-http":
+        app = mcp.streamable_http_app(
+            host="0.0.0.0",
+            streamable_http_path="/mcp",
+        )
+
+        async def health_check(request):
+            return JSONResponse({"status": "ok"})
+
+        app.routes.append(Route("/health", health_check, methods=["GET"]))
+        app.add_middleware(MCPBearerAuthMiddleware)
+
+        import uvicorn
+
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=int(os.getenv("PORT", "8000")),
+        )
+    else:
+        mcp.run(transport="stdio")
+
+
 if __name__ == "__main__":
-    mcp.run()
+    run_server()

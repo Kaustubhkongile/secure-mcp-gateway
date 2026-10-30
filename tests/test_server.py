@@ -1,6 +1,9 @@
-
 import json
 from unittest.mock import Mock
+import runpy
+from unittest.mock import patch
+from starlette.applications import Starlette
+from starlette.routing import Route
 
 import pytest
 
@@ -205,3 +208,62 @@ def test_get_audit_log_handles_unexpected_error(mocks):
     assert decode(server.get_audit_log()) == {
         "error": "failed to retrieve audit log"
     }
+
+def test_http_transport_starts_with_render_configuration(monkeypatch):
+    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
+    monkeypatch.setenv("PORT", "12345")
+
+    fake_app = Starlette()
+
+    with (
+    patch.object(server.mcp, "streamable_http_app", return_value=fake_app) as create_app,
+    patch("uvicorn.run") as run_server,
+    ):
+        server.run_server()
+
+    create_app.assert_called_once_with(
+        host="0.0.0.0",
+        streamable_http_path="/mcp",
+    )
+
+    assert any(
+    item.cls is server.MCPBearerAuthMiddleware
+    for item in fake_app.user_middleware
+    )
+
+    args, kwargs = run_server.call_args
+
+    assert args[0] is fake_app
+    assert kwargs["host"] == "0.0.0.0"
+    assert kwargs["port"] == 12345
+
+
+def test_http_transport_registers_health_endpoint(monkeypatch):
+    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
+
+    fake_app = Starlette()
+
+    with (
+        patch.object(server.mcp, "streamable_http_app", return_value=fake_app),
+        patch("uvicorn.run"),
+        patch.object(server, "MCPBearerAuthMiddleware"),
+    ):
+        server.run_server()
+
+    health_routes = [
+        route
+        for route in fake_app.routes
+        if isinstance(route, Route) and route.path == "/health"
+    ]
+
+    assert len(health_routes) == 1
+    assert health_routes[0].methods == {"GET", "HEAD"}
+
+
+def test_default_transport_uses_stdio(monkeypatch):
+    monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+
+    with patch.object(server.mcp, "run") as run_mcp:
+        server.run_server()
+
+    run_mcp.assert_called_once_with(transport="stdio")
