@@ -1,116 +1,203 @@
 ﻿# Secure MCP Gateway
 
-A Python-based Model Context Protocol (MCP) server that provides controlled access to service configuration records. The gateway uses a human-in-the-loop approval workflow to protect configuration updates and deletions, with Supabase-backed persistence, reviewer authentication, and audit logging.
+A secure, approval-driven **Model Context Protocol (MCP) Gateway** built with Python, FastAPI, and Supabase.
 
-## Features
+The gateway allows LLM clients to access service configuration records while preventing sensitive updates and deletions from executing without explicit human approval.
 
-- Expose configuration records to LLM clients through MCP tools.
-- Retrieve individual configuration records and list available records.
-- Submit configuration update and deletion requests without immediately applying changes.
-- Require an authorized reviewer to approve or reject pending requests.
-- Authenticate reviewers using Supabase Auth.
-- Enforce reviewer authorization using a configured reviewer identity and database-side checks.
-- Apply approved configuration changes through a PostgreSQL RPC function.
-- Prevent duplicate decisions on already-processed requests.
-- Record request, approval, and rejection activity in an audit log.
-- Validate inputs and restrict supported configuration updates.
-- Run automated unit tests using pytest.
+It combines MCP tool access, reviewer authentication, database-level authorization, transactional approval workflows, and audit logging to demonstrate how AI agents can interact with sensitive systems under controlled permissions.
+
+[GitHub Repository](https://github.com/Kaustubhkongile/secure-mcp-gateway)
+
+---
+
+## Key Features
+
+- **MCP Integration:** Exposes service configuration data through six MCP tools.
+- **Controlled Mutations:** Configuration updates and deletions create approval requests instead of executing immediately.
+- **Human-in-the-Loop:** Authorized reviewers approve or reject pending operations.
+- **Authentication:** Bearer-token authentication protects the remote MCP endpoint.
+- **Reviewer Authorization:** Supabase Auth validates reviewer identities, with an additional database-side authorization check.
+- **Transactional Operations:** Approved changes are applied through PostgreSQL RPC functions.
+- **Audit Logging:** Records request creation, approval, and rejection events.
+- **Duplicate Decision Protection:** Prevents already-processed requests from being decided again.
+- **Input Validation:** Restricts supported operations and validates request payloads.
+- **Automated Testing:** 136 passing tests with 98% code coverage.
 
 ## Architecture
 
-The project separates LLM-facing tools from reviewer decision-making.
+The project separates LLM-facing operations from reviewer decision-making.
 
 ```text
-LLM Client
-    |
-    v
-MCP Server (app/server.py)
-    |
-    v
-Gateway / Repository
-    |
-    v
-Supabase PostgreSQL
-    |
-    +-- Configuration Records
-    +-- Approval Requests
-    +-- Audit Events
+                    LLM Client
+                        |
+                        v
+                MCP Authentication
+                        |
+                        v
+                 MCP Server
+                 (app/server.py)
+                        |
+                        v
+                Gateway Layer
+                 (app/gateway.py)
+                        |
+                        v
+               Repository Layer
+               (app/repository.py)
+                        |
+                        v
+                Supabase PostgreSQL
+                 /       |       \
+                /        |        \
+          Config      Approval    Audit
+          Records     Requests    Events
 
-Reviewer
-    |
-    v
-Reviewer API (FastAPI)
-    |
-    +-- Supabase Auth token validation
-    +-- Configured reviewer authorization
-    |
-    v
-decide_gateway_request RPC
-    |
-    +-- Approve or reject request
-    +-- Apply approved configuration change
-    +-- Record audit event
+
+                  Authorized Reviewer
+                         |
+                         v
+                   Reviewer API
+                (FastAPI / decisions)
+                         |
+                         v
+                  Supabase Auth
+                         |
+                         v
+                Reviewer Authorization
+                         |
+                         v
+              decide_gateway_request RPC
+                         |
+                +--------+--------+
+                |                 |
+             Approve            Reject
+                |                 |
+                v                 v
+          Apply approved     Preserve original
+          configuration      configuration
+             change
+                |
+                v
+             Audit Log
 ```
 
-The MCP server can request changes but does not expose a direct approval tool. Approval and rejection decisions go through the authenticated reviewer API.
+### Request Lifecycle
+
+1. An LLM client requests a configuration update or deletion through an MCP tool.
+2. The gateway validates the requested operation and creates a pending approval request.
+3. The original configuration remains unchanged.
+4. An authorized reviewer authenticates with Supabase and submits an approval or rejection decision.
+5. The reviewer API invokes the PostgreSQL `decide_gateway_request` RPC.
+6. The database function verifies authorization and processes the pending request.
+7. Approved changes are applied and audit events are recorded. Rejected requests leave the original configuration unchanged.
+
+**Important:** The MCP server does not expose a direct approval tool. Approval decisions are handled separately by the authenticated reviewer API.
 
 ## Tech Stack
 
-- Python
-- Model Context Protocol (MCP) SDK
-- FastAPI
-- Supabase Auth and PostgreSQL
-- PostgreSQL RPC functions
-- pytest
-- python-dotenv
+| Technology | Purpose |
+|---|---|
+| Python 3.11+ | Backend implementation |
+| MCP Python SDK | MCP server and tool integration |
+| FastAPI | Reviewer API |
+| Supabase Auth | Reviewer authentication |
+| PostgreSQL | Configuration and approval persistence |
+| PostgreSQL RPC | Transactional approval workflow |
+| Pydantic | Request validation |
+| pytest | Automated testing |
+| pytest-cov | Code coverage |
+| Render | Remote deployment |
 
 ## Project Structure
 
 ```text
 secure-mcp-gateway/
+│
 ├── app/
 │   ├── __init__.py
 │   ├── gateway.py
+│   ├── mcp_auth.py
 │   ├── repository.py
-│   ├── server.py
 │   ├── reviewer_api.py
+│   ├── server.py
 │   └── supabase_client.py
+│
 ├── scripts/
 │   ├── test_approval_rpc.py
 │   ├── test_gateway_supabase.py
 │   ├── test_request_rpc.py
-│   ├── test_supabase.py
-│   └── test_reviewer_login.py
+│   ├── test_reviewer_login.py
+│   └── test_supabase.py
+│
 ├── tests/
 │   ├── test_gateway.py
-│   └── test_repository.py
+│   ├── test_mcp_auth.py
+│   ├── test_repository.py
+│   ├── test_reviewer_api.py
+│   └── test_server.py
+│
 ├── .env.example
 ├── .gitignore
 ├── pyproject.toml
 └── README.md
 ```
 
-## Prerequisites
+## Live Deployment
 
-- Python 3.11 or newer, compatible with the dependencies in `pyproject.toml`
-- A Supabase project
+The project is deployed as two separate Render services backed by Supabase.
+
+| Component | Endpoint |
+|---|---|
+| Remote MCP Server | https://secure-mcp-gateway.onrender.com |
+| MCP Streamable HTTP Endpoint | https://secure-mcp-gateway.onrender.com/mcp |
+| MCP Health Check | https://secure-mcp-gateway.onrender.com/health |
+| Reviewer API | https://secure-mcp-gateway-reviewer.onrender.com |
+| Reviewer Health Check | https://secure-mcp-gateway-reviewer.onrender.com/health |
+| Reviewer Decision API | `POST /decisions` on the Reviewer API |
+
+The remote MCP endpoint requires a valid bearer token. The reviewer API separately validates Supabase Auth access tokens and reviewer permissions.
+
+**Deployment note:** The services use Render's free tier, so cold starts or temporary unavailability may occur.
+
+## Available MCP Tools
+
+The MCP server exposes six tools:
+
+| Tool | Description |
+|---|---|
+| `list_records` | Lists available service configuration records. |
+| `get_record` | Retrieves an individual configuration record. |
+| `request_record_update` | Creates a configuration update request requiring approval. |
+| `request_record_deletion` | Creates a deletion request requiring approval. |
+| `get_approval_status` | Retrieves the current status of an approval request. |
+| `get_audit_log` | Retrieves recorded audit events. |
+
+Update and deletion operations never directly modify the target record through the MCP tools.
+
+## Local Development Setup
+
+### Prerequisites
+
+- Python 3.11 or newer
 - Git
-
-## Setup
+- A Supabase project
+- PowerShell or another terminal
 
 ### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Kaustubhkongile/secure-mcp-gateway.git
+
 cd secure-mcp-gateway
 ```
 
-### 2. Create and activate a virtual environment
+### 2. Create a virtual environment
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 python -m venv .venv
+
 .\.venv\Scripts\Activate.ps1
 ```
 
@@ -122,70 +209,87 @@ python -m pip install -e ".[dev]"
 
 ### 4. Configure environment variables
 
-Copy `.env.example` to `.env` and configure the values for your Supabase project.
+Create your local environment file:
 
-The application uses these environment variables:
+```powershell
+Copy-Item .env.example .env
+```
+
+Configure the following variables:
 
 | Variable | Purpose |
 |---|---|
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_KEY` | Server-side Supabase key used by the repository |
-| `SUPABASE_ANON_KEY` | Publishable/anon key used for reviewer authentication and JWT-authenticated API requests |
-| `REVIEWER_USER_ID` | Supabase Auth user ID authorized to make reviewer decisions |
+| `SUPABASE_KEY` | Server-side key used by the repository |
+| `SUPABASE_ANON_KEY` | Key used for reviewer authentication |
+| `REVIEWER_USER_ID` | Supabase Auth UUID of the authorized reviewer |
 
-Use the appropriate key type supported by your Supabase project. Keep `.env` out of source control.
+For remote MCP deployment, also configure:
 
-**Never commit service-role keys, access tokens, passwords, or production credentials.** The publishable/anon key is not a substitute for authorization; database permissions and reviewer checks must enforce access.
+| Variable | Purpose |
+|---|---|
+| `MCP_TRANSPORT` | Set to `streamable-http` for remote transport |
+| `MCP_AUTH_TOKEN` | Shared secret required to access the remote MCP endpoint |
 
-### 5. Configure the database
+Keep credentials and access tokens in environment variables. Never commit `.env` or production secrets.
 
-Configure the Supabase database with the schema, permissions, and PostgreSQL functions required by the application.
+### 5. Configure Supabase
+
+Provision the database schema, permissions, and PostgreSQL functions required by the application.
 
 The implementation uses:
 
+**Database tables**
 - `config_records`
 - `approval_requests`
 - `audit_events`
+
+**Authorization-related table**
 - `private.gateway_reviewers`
+
+**PostgreSQL RPC functions**
 - `create_gateway_request`
 - `decide_gateway_request`
 
-The reviewer decision function must validate the authenticated user, check reviewer authorization, ensure the request is still pending, apply approved changes transactionally, and record the resulting audit event.
+The database functions are responsible for request creation and reviewer decision processing.
 
-Apply the database definitions and grants appropriate to your project before running the integration workflows.
+Ensure the required database permissions and reviewer authorization rules are configured before running integration workflows.
 
-## Run the MCP Server
+## Running Locally
 
-From the project root, with the virtual environment activated:
+### Run the MCP Server
+
+With the virtual environment activated:
 
 ```powershell
 python -m app.server
 ```
 
-Configure your MCP client to launch the server using the project's Python interpreter and the stdio transport.
+The default local transport is STDIO, suitable for MCP clients such as Claude Desktop.
 
-## Run the Reviewer API
+### Run the Reviewer API
 
-In a separate terminal, activate the virtual environment and run:
+Open a separate terminal:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
+
 python -m uvicorn app.reviewer_api:app --host 127.0.0.1 --port 8000
 ```
 
-The local health endpoint is:
+Health endpoint:
 
 ```text
 http://127.0.0.1:8000/health
 ```
 
-The reviewer decision endpoint is:
+Reviewer decision endpoint:
 
 ```text
 POST http://127.0.0.1:8000/decisions
 ```
 
-The decision endpoint expects a valid Supabase Auth access token in the `Authorization: Bearer <token>` header and a JSON request body:
+Example request:
 
 ```json
 {
@@ -194,62 +298,157 @@ The decision endpoint expects a valid Supabase Auth access token in the `Authori
 }
 ```
 
-Set `approve` to `false` to reject a request. Only the configured reviewer is authorized, and the database function independently verifies reviewer authorization.
+The endpoint requires a valid Supabase Auth access token:
 
-Keep the API bound to localhost for local development. A deployed API requires appropriate HTTPS, deployment secrets, network controls, and operational hardening.
+```text
+Authorization: Bearer <supabase-access-token>
+```
 
-## Available MCP Tools
+Set `approve` to `false` to reject a request.
 
-| Tool | Responsibility |
+Only the configured reviewer is authorized to make decisions.
+
+## Remote MCP Transport
+
+The application supports two MCP transports:
+
+| Transport | Use case |
 |---|---|
-| `list_records` | List configuration records |
-| `get_record` | Retrieve a configuration record |
-| `request_record_update` | Submit an update request for approval |
-| `request_record_deletion` | Submit a deletion request for approval |
-| `get_approval_status` | Check an approval request's status |
-| `get_audit_log` | Retrieve audit events |
+| STDIO | Local MCP clients |
+| Streamable HTTP | Remote MCP clients |
 
-Update and deletion requests are persisted as pending requests. They do not immediately modify or delete the target configuration.
+For remote deployment, configure:
 
-There is no direct MCP approval tool. Reviewer decisions are handled by the authenticated reviewer API.
+```text
+MCP_TRANSPORT=streamable-http
+MCP_AUTH_TOKEN=<your-secret-token>
+```
 
-## Run Tests
+The remote endpoint is:
 
-Activate the virtual environment and run the automated test suite:
+```text
+https://secure-mcp-gateway.onrender.com/mcp
+```
+
+The MCP endpoint uses bearer-token authentication. The reviewer API uses a separate Supabase Auth JWT and reviewer identity validation.
+
+This separation ensures that access to MCP tools does not automatically grant permission to approve sensitive operations.
+
+## Testing
+
+Run the automated test suite:
 
 ```powershell
 python -m pytest -q
 ```
 
-**Current verified result:** 27 tests passed.
+Run tests with coverage:
 
-The scripts in `scripts/` support additional Supabase integration and reviewer-authentication checks. Run them only after configuring the required environment variables and database schema. Some scripts may interact with persistent test data, so use a dedicated development or test project.
+```powershell
+python -m pytest --cov=app --cov-report=term-missing
+```
+
+### Verified Test Results
+
+Latest verified test execution:
+
+| Metric | Result |
+|---|---:|
+| Total tests | 136 |
+| Passed | 136 |
+| Failed | 0 |
+| Total statements | 344 |
+| Uncovered statements | 7 |
+| Overall coverage | **98%** |
+| Execution time | 5.14 seconds |
+
+### Module-wise Coverage
+
+| Module | Coverage |
+|---|---:|
+| `gateway.py` | 99% |
+| `mcp_auth.py` | 100% |
+| `repository.py` | 100% |
+| `reviewer_api.py` | 98% |
+| `server.py` | 96% |
+| `supabase_client.py` | 92% |
+
+### Manual Security Validation
+
+The following six security checks were also verified against the deployed services:
+
+| Security Scenario | Expected Response | Result |
+|---|---:|---|
+| Missing reviewer authentication | 401 | Passed |
+| Invalid reviewer JWT | 401 | Passed |
+| Authenticated non-reviewer | 403 | Passed |
+| Invalid reviewer request payload | 422 | Passed |
+| Missing MCP bearer token | 401 | Passed |
+| Invalid MCP bearer token | 401 | Passed |
+
+Additional integration testing verified successful approval and rejection workflows, configuration persistence, and audit events.
+
+The scripts in `scripts/` support additional Supabase integration testing. Run them only against a dedicated development or test project because they may interact with persistent data.
 
 ## Security Design
 
-- **Human-in-the-loop approval:** Updates and deletions require an explicit reviewer decision.
-- **Reviewer authentication:** Supabase Auth validates access tokens.
-- **Reviewer authorization:** The API checks the configured reviewer identity, and the database function independently checks reviewer permissions.
-- **Duplicate-decision protection:** A request that has already been decided cannot be processed again.
-- **Transactional updates:** Approval, configuration changes, and audit recording are handled through a database function.
-- **Auditability:** Request creation and reviewer decisions produce persistent audit events.
-- **Secret management:** Credentials belong in environment variables, not source control.
-- **Restricted operations:** Only explicitly supported operations and input fields should be accepted.
+### 1. MCP Authentication
+
+The remote MCP endpoint is protected by bearer-token authentication.
+
+The middleware validates the supplied token before allowing access to the MCP endpoint.
+
+### 2. Reviewer Authentication
+
+Supabase Auth validates reviewer access tokens.
+
+### 3. Reviewer Authorization
+
+The reviewer API verifies the authenticated user's identity against the configured reviewer ID. The database decision function independently enforces reviewer authorization.
+
+### 4. Human-in-the-Loop Approval
+
+Sensitive update and deletion operations remain pending until an authorized reviewer makes a decision.
+
+### 5. Transactional Decision Processing
+
+The PostgreSQL RPC function handles approval decisions, approved configuration changes, and corresponding audit events.
+
+### 6. Duplicate Decision Protection
+
+Requests that have already been processed cannot be approved or rejected again.
+
+### 7. Audit Logging
+
+The application records request creation and reviewer decisions, providing an audit trail of sensitive operations.
+
+### 8. Secret Management
+
+Environment variables are used for credentials and deployment secrets. The `.gitignore` configuration excludes local environment files.
 
 ## Limitations and Production Readiness
 
-This project is a development and portfolio demonstration. Passing unit tests and manual workflow checks does not by itself establish production readiness.
+This project is a portfolio and development demonstration of secure MCP tool access and human-reviewed operations.
 
-Before deployment, review:
+Before using it to manage production systems, additional engineering and security reviews should cover:
 
-- Database grants, row-level security, and function ownership.
+- Database grants, Row Level Security policies, and RPC function ownership.
 - Reviewer onboarding, revocation, and multi-reviewer authorization.
-- API rate limiting, request validation, and safe error handling.
-- Audit-log retention and protection against unauthorized modification.
-- Concurrency behavior, monitoring, and operational recovery.
-- HTTPS and secure secret management in the deployment environment.
-- Automated integration and security tests against a dedicated test database.
+- API rate limiting and abuse protection.
+- Audit-log retention and tamper resistance.
+- Concurrency handling and operational recovery.
+- Monitoring, alerting, and observability.
+- Secret rotation and deployment security.
+- Comprehensive integration testing against a dedicated test database.
 
-## Disclaimer
+Passing automated tests and manual security checks does not independently establish production readiness.
 
-This project demonstrates controlled MCP access and human-reviewed configuration changes. It should not be used to manage production systems until the necessary security, reliability, and operational reviews have been completed.
+## Author
+
+**Kaustubh Kongile**
+
+GitHub: [Kaustubhkongile](https://github.com/Kaustubhkongile)
+
+---
+
+If you find this project useful, feel free to explore the repository and its implementation.
