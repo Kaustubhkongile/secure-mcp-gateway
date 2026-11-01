@@ -8,6 +8,20 @@ It combines MCP tool access, reviewer authentication, database-level authorizati
 
 [GitHub Repository](https://github.com/Kaustubhkongile/secure-mcp-gateway)
 
+## 🎬 Project Demo
+
+**Watch the complete Secure MCP Gateway demonstration:**
+
+[▶ Watch Demo – Secure MCP Gateway](https://github.com/Kaustubhkongile/secure-mcp-gateway/blob/main/demo/Secure-MCP-Gateway-Demo.mp4)
+
+The demonstration covers:
+
+- Remote MCP server integration with Claude Desktop
+- Secure configuration retrieval
+- Human-in-the-loop approval workflow
+- Reviewer authentication and authorization
+- Secure configuration updates
+- Audit logging and final verification
 ---
 
 ## Key Features
