@@ -156,7 +156,25 @@ The project is deployed as two separate Render services backed by Supabase.
 | Reviewer Decision API | `POST /decisions` on the Reviewer API |
 
 The remote MCP endpoint requires a valid bearer token. The reviewer API separately validates Supabase Auth access tokens and reviewer permissions.
+## Live Deployment
 
+The project is deployed as two separate Render services backed by Supabase.
+
+| Component | Endpoint |
+|---|---|
+| Remote MCP Server | `https://secure-mcp-gateway.onrender.com` |
+| MCP Streamable HTTP Endpoint | `https://secure-mcp-gateway.onrender.com/mcp` |
+| MCP Server Health | [Check MCP Server](https://secure-mcp-gateway.onrender.com/health) |
+| Reviewer API | `https://secure-mcp-gateway-reviewer.onrender.com` |
+| Reviewer API Health | [Check Reviewer API](https://secure-mcp-gateway-reviewer.onrender.com/health) |
+| Reviewer Decision API | `POST /decisions` on the Reviewer API |
+
+### Deployment Notes
+
+- The remote MCP endpoint uses bearer-token authentication.
+- The reviewer API separately validates Supabase Auth access tokens and reviewer permissions.
+- Both services expose health-check endpoints to verify service availability.
+- The services use Render's free tier, so cold starts or temporary unavailability may occur.
 **Deployment note:** The services use Render's free tier, so cold starts or temporary unavailability may occur.
 
 ## Available MCP Tools
