@@ -23,62 +23,75 @@ It combines MCP tool access, reviewer authentication, database-level authorizati
 - **Input Validation:** Restricts supported operations and validates request payloads.
 - **Automated Testing:** 136 passing tests with 98% code coverage.
 
+
+
 ## Architecture
 
-The project separates LLM-facing operations from reviewer decision-making.
+The gateway separates LLM-facing operations from reviewer decision-making. Sensitive configuration changes require explicit reviewer authorization before execution.
 
-```text
-                    LLM Client
-                        |
-                        v
-                MCP Authentication
-                        |
-                        v
-                 MCP Server
-                 (app/server.py)
-                        |
-                        v
-                Gateway Layer
-                 (app/gateway.py)
-                        |
-                        v
-               Repository Layer
-               (app/repository.py)
-                        |
-                        v
-                Supabase PostgreSQL
-                 /       |       \
-                /        |        \
-          Config      Approval    Audit
-          Records     Requests    Events
+### System Architecture
 
+```mermaid
+flowchart TB
+    A["Claude Desktop - LLM Client"]
 
-                  Authorized Reviewer
-                         |
-                         v
-                   Reviewer API
-                (FastAPI / decisions)
-                         |
-                         v
-                  Supabase Auth
-                         |
-                         v
-                Reviewer Authorization
-                         |
-                         v
-              decide_gateway_request RPC
-                         |
-                +--------+--------+
-                |                 |
-             Approve            Reject
-                |                 |
-                v                 v
-          Apply approved     Preserve original
-          configuration      configuration
-             change
-                |
-                v
-             Audit Log
+    subgraph MCP["MCP Server - Render"]
+        B["Bearer Token Authentication"]
+        C["MCP Server - Streamable HTTP"]
+        D["Gateway Layer"]
+        E["Repository Layer"]
+        B --> C --> D --> E
+    end
+
+    subgraph DB["Supabase PostgreSQL"]
+        F[("Configuration Records")]
+        G[("Approval Requests")]
+        H[("Audit Events")]
+        I["create_gateway_request RPC"]
+        J["decide_gateway_request RPC"]
+    end
+
+    subgraph Reviewer["Reviewer Service - Render"]
+        K["Authorized Reviewer"]
+        L["Reviewer API - FastAPI"]
+        M["Supabase Auth JWT Validation"]
+        N["Reviewer Identity Check"]
+        K --> L --> M --> N
+    end
+
+    A --> B
+    E --> F
+    E --> I
+    I --> G
+    N --> J
+    J --> G
+    J --> F
+    J --> H
+```
+
+### Approval Workflow
+
+```mermaid
+
+flowchart TD
+    A["LLM requests update or deletion"]
+    B["Gateway validates request"]
+    C["Create pending approval"]
+    D["Original config remains<br/>unchanged"]
+    E["Reviewer makes decision"]
+    F{"Decision?"}
+
+    G["Approve"]
+    H["Reject"]
+    I["Apply approved change"]
+    J["Keep original config"]
+    K["Record audit event"]
+    L["Return final request status"]
+
+    A --> B --> C --> D --> E --> F
+    F -->|Approved| G --> I --> K
+    F -->|Rejected| H --> J --> K
+    K --> L
 ```
 
 ### Request Lifecycle
